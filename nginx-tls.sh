@@ -1,3 +1,4 @@
+cat > nginx-tls-fixed.sh << 'EOF'
 #!/bin/bash
 set -e
 
@@ -7,9 +8,10 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
-# 1. 安装依赖（修复：删除yum，修正包名）
+# 1. 安装依赖（修复版，无yum，正确包名）
 echo "===== 安装 Nginx 和 Certbot ====="
-apt update && apt install -y nginx certbot python3-certbot-nginx iptables-persistent
+apt update -y
+apt install -y nginx certbot python3-certbot-nginx iptables-persistent
 
 # 2. 交互获取配置信息
 read -p "请输入要配置的域名（如 example.com）: " DOMAIN
@@ -20,12 +22,12 @@ read -p "请输入申请 SSL 证书的邮箱: " EMAIL
 # 3. 创建 Nginx 配置文件
 NGINX_CONF="/etc/nginx/conf.d/${DOMAIN}.conf"
 echo "===== 创建 Nginx 反向代理配置 ====="
-cat > $NGINX_CONF << EOF
+cat > $NGINX_CONF << EOC
 server {
     listen 80;
     $( [ "$IPV6_ENABLE" = "y" ] && echo "listen [::]:80;" )
     server_name $DOMAIN;
-    
+
     # 重定向 HTTP 到 HTTPS
     location / {
         return 301 https://\$host\$request_uri;
@@ -38,8 +40,8 @@ server {
     server_name $DOMAIN;
 
     # SSL 证书配置
-    ssl_certificate /etc/letsencrypt/live/\$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/\$DOMAIN/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
@@ -56,7 +58,7 @@ server {
         proxy_read_timeout 60s;
     }
 }
-EOF
+EOC
 
 # 4. 申请 SSL 证书
 echo "===== 申请 Let's Encrypt SSL 证书 ====="
@@ -66,16 +68,24 @@ certbot certonly --nginx -d $DOMAIN --email $EMAIL --agree-tos --non-interactive
 echo "===== 配置证书自动续期 ====="
 echo "0 0 1 * * root /usr/bin/certbot renew --quiet && systemctl reload nginx" >> /etc/crontab
 
-# 6. 放行端口（修复：兼容Debian/Ubuntu）
+# 6. 放行端口
 echo "===== 放行 80/443 端口 ====="
 ufw allow 80/tcp
 ufw allow 443/tcp
-[ "$IPV6_ENABLE" = "y" ] && ip6tables -A INPUT -p tcp --dport 80 -j ACCEPT
-[ "$IPV6_ENABLE" = "y" ] && ip6tables -A INPUT -p tcp --dport 443 -j ACCEPT
-ip6tables-save > /etc/iptables/rules.v6
+if [ "$IPV6_ENABLE" = "y" ]; then
+    ip6tables -A INPUT -p tcp --dport 80 -j ACCEPT
+    ip6tables -A INPUT -p tcp --dport 443 -j ACCEPT
+    ip6tables-save > /etc/iptables/rules.v6
+fi
 
 # 7. 重启 Nginx 并验证
 echo "===== 重启 Nginx 服务 ====="
-systemctl restart nginx && systemctl enable nginx
+systemctl restart nginx
+systemctl enable nginx
 nginx -t
-echo "===== 配置成功！====="
+
+echo -e "\n===== 配置成功！Nginx 反向代理 + TLS + IPv4/IPv6 已部署 ====="
+EOF
+
+chmod +x nginx-tls-fixed.sh
+bash nginx-tls-fixed.sh
