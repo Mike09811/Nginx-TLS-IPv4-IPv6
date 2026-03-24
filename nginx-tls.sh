@@ -29,11 +29,11 @@ else
     $PKG_MGR install -y nginx certbot python3-certbot-nginx iptables-services
 fi
 
-# 2. 交互获取配置信息
-read -p "请输入要配置的域名（如 example.com）: " DOMAIN
-read -p "请输入反向代理的源站地址（如 http://127.0.0.1:8080）: " TARGET
-read -p "是否开启 IPv6 支持？(y/n): " IPV6_ENABLE
-read -p "请输入申请 SSL 证书的邮箱: " EMAIL
+# 2. 交互获取配置信息（从 /dev/tty 读取，兼容 curl | bash）
+read -p "请输入要配置的域名（如 example.com）: " DOMAIN < /dev/tty
+read -p "请输入反向代理的源站地址（如 http://127.0.0.1:8080）: " TARGET < /dev/tty
+read -p "是否开启 IPv6 支持？(y/n): " IPV6_ENABLE < /dev/tty
+read -p "请输入申请 SSL 证书的邮箱: " EMAIL < /dev/tty
 
 # 3. 创建 Nginx 配置文件
 NGINX_CONF="/etc/nginx/conf.d/${DOMAIN}.conf"
