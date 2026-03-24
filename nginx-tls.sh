@@ -7,9 +7,26 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
+# 检测包管理器
+if command -v apt &>/dev/null; then
+    PKG_MGR="apt"
+elif command -v yum &>/dev/null; then
+    PKG_MGR="yum"
+elif command -v dnf &>/dev/null; then
+    PKG_MGR="dnf"
+else
+    echo "错误：未找到支持的包管理器（apt/yum/dnf）！"
+    exit 1
+fi
+
 # 1. 安装依赖
 echo "===== 安装 Nginx 和 Certbot ====="
-apt update && apt install -y nginx certbot python3-certbot-nginx iptables-persistent
+if [ "$PKG_MGR" = "apt" ]; then
+    apt update && apt install -y nginx certbot python3-certbot-nginx netfilter-persistent iptables-persistent
+elif [ "$PKG_MGR" = "yum" ] || [ "$PKG_MGR" = "dnf" ]; then
+    $PKG_MGR install -y epel-release || true
+    $PKG_MGR install -y nginx certbot python3-certbot-nginx iptables-services
+fi
 
 # 2. 交互获取配置信息
 read -p "请输入要配置的域名（如 example.com）: " DOMAIN
