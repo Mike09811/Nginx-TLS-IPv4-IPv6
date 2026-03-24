@@ -1,4 +1,3 @@
-cat > nginx-tls-fixed.sh << 'EOF'
 #!/bin/bash
 set -e
 
@@ -8,10 +7,9 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
-# 1. 安装依赖（修复版，无yum，正确包名）
+# 1. 安装依赖
 echo "===== 安装 Nginx 和 Certbot ====="
-apt update -y
-apt install -y nginx certbot python3-certbot-nginx iptables-persistent
+apt update && apt install -y nginx certbot python3-certbot-nginx iptables-persistent
 
 # 2. 交互获取配置信息
 read -p "请输入要配置的域名（如 example.com）: " DOMAIN
@@ -22,12 +20,12 @@ read -p "请输入申请 SSL 证书的邮箱: " EMAIL
 # 3. 创建 Nginx 配置文件
 NGINX_CONF="/etc/nginx/conf.d/${DOMAIN}.conf"
 echo "===== 创建 Nginx 反向代理配置 ====="
-cat > $NGINX_CONF << EOC
+cat > $NGINX_CONF << EOF
 server {
     listen 80;
     $( [ "$IPV6_ENABLE" = "y" ] && echo "listen [::]:80;" )
     server_name $DOMAIN;
-
+    
     # 重定向 HTTP 到 HTTPS
     location / {
         return 301 https://\$host\$request_uri;
@@ -58,7 +56,7 @@ server {
         proxy_read_timeout 60s;
     }
 }
-EOC
+EOF
 
 # 4. 申请 SSL 证书
 echo "===== 申请 Let's Encrypt SSL 证书 ====="
@@ -68,10 +66,11 @@ certbot certonly --nginx -d $DOMAIN --email $EMAIL --agree-tos --non-interactive
 echo "===== 配置证书自动续期 ====="
 echo "0 0 1 * * root /usr/bin/certbot renew --quiet && systemctl reload nginx" >> /etc/crontab
 
-# 6. 放行端口
+# 6. 放行 80/443 端口
 echo "===== 放行 80/443 端口 ====="
 ufw allow 80/tcp
 ufw allow 443/tcp
+
 if [ "$IPV6_ENABLE" = "y" ]; then
     ip6tables -A INPUT -p tcp --dport 80 -j ACCEPT
     ip6tables -A INPUT -p tcp --dport 443 -j ACCEPT
@@ -80,12 +79,5 @@ fi
 
 # 7. 重启 Nginx 并验证
 echo "===== 重启 Nginx 服务 ====="
-systemctl restart nginx
-systemctl enable nginx
-nginx -t
-
-echo -e "\n===== 配置成功！Nginx 反向代理 + TLS + IPv4/IPv6 已部署 ====="
-EOF
-
-chmod +x nginx-tls-fixed.sh
-bash nginx-tls-fixed.sh
+systemctl restart nginx && systemctl enable nginx
+nginx -t && echo "===== 配置成功！=====" || echo "===== 配置出错，请检查日志！====="
