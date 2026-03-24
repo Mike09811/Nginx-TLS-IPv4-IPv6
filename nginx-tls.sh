@@ -35,15 +35,16 @@ read -p "请输入反向代理的源站地址（如 http://127.0.0.1:8080）: " 
 read -p "是否开启 IPv6 支持？(y/n): " IPV6_ENABLE < /dev/tty
 read -p "请输入申请 SSL 证书的邮箱: " EMAIL < /dev/tty
 
-# 3. 创建 Nginx 配置文件
 NGINX_CONF="/etc/nginx/conf.d/${DOMAIN}.conf"
-echo "===== 创建 Nginx 反向代理配置 ====="
+
+# 3. 先写一个仅 HTTP 的临时配置，用于 Certbot 验证
+echo "===== 创建临时 Nginx 配置（用于证书申请）====="
 
 IPV6_LISTEN_80=""
 IPV6_LISTEN_443=""
 if [ "$IPV6_ENABLE" = "y" ]; then
     IPV6_LISTEN_80="    listen [::]:80;"
-    IPV6_LISTEN_443="    listen [::]:443 ssl http2;"
+    IPV6_LISTEN_443="    listen [::]:443 ssl;"
 fi
 
 cat > "$NGINX_CONF" << EOF
@@ -52,25 +53,44 @@ server {
 ${IPV6_LISTEN_80}
     server_name ${DOMAIN};
 
-    # 重定向 HTTP 到 HTTPS
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+EOF
+
+# 重载 Nginx 使临时配置生效
+systemctl reload nginx
+
+# 4. 申请 SSL 证书
+echo "===== 申请 Let's Encrypt SSL 证书 ====="
+certbot certonly --nginx -d "$DOMAIN" --email "$EMAIL" --agree-tos --non-interactive
+
+# 5. 写入完整的 HTTPS 配置
+echo "===== 创建完整 Nginx 反向代理配置 ====="
+cat > "$NGINX_CONF" << EOF
+server {
+    listen 80;
+${IPV6_LISTEN_80}
+    server_name ${DOMAIN};
+
     location / {
         return 301 https://\$host\$request_uri;
     }
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
 ${IPV6_LISTEN_443}
+    http2 on;
     server_name ${DOMAIN};
 
-    # SSL 证书配置
     ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
 
-    # 反向代理配置
     location / {
         proxy_pass ${TARGET};
         proxy_set_header Host \$host;
@@ -84,15 +104,11 @@ ${IPV6_LISTEN_443}
 }
 EOF
 
-# 4. 申请 SSL 证书
-echo "===== 申请 Let's Encrypt SSL 证书 ====="
-certbot certonly --nginx -d "$DOMAIN" --email "$EMAIL" --agree-tos --non-interactive
-
-# 5. 配置证书自动续期
+# 6. 配置证书自动续期
 echo "===== 配置证书自动续期 ====="
 echo "0 0 1 * * root /usr/bin/certbot renew --quiet && systemctl reload nginx" >> /etc/crontab
 
-# 6. 放行 80/443 端口
+# 7. 放行 80/443 端口
 echo "===== 放行 80/443 端口 ====="
 if command -v ufw &>/dev/null; then
     ufw allow 80/tcp
@@ -105,7 +121,7 @@ if [ "$IPV6_ENABLE" = "y" ]; then
     ip6tables-save > /etc/iptables/rules.v6
 fi
 
-# 7. 重启 Nginx 并验证
+# 8. 重启 Nginx 并验证
 echo "===== 重启 Nginx 服务 ====="
 systemctl restart nginx
 systemctl enable nginx
