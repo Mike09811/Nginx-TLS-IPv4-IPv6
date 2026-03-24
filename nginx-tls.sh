@@ -23,8 +23,8 @@ echo "===== 创建 Nginx 反向代理配置 ====="
 cat > $NGINX_CONF << EOF
 server {
     listen 80;
-    $( [ "$IPV6_ENABLE" = "y" ] && echo "listen [::]:80;" )
-    server_name $DOMAIN;
+    \$( [ "\$IPV6_ENABLE" = "y" ] && echo "listen [::]:80;" )
+    server_name \$DOMAIN;
     
     # 重定向 HTTP 到 HTTPS
     location / {
@@ -34,19 +34,19 @@ server {
 
 server {
     listen 443 ssl http2;
-    $( [ "$IPV6_ENABLE" = "y" ] && echo "listen [::]:443 ssl http2;" )
-    server_name $DOMAIN;
+    \$( [ "\$IPV6_ENABLE" = "y" ] && echo "listen [::]:443 ssl http2;" )
+    server_name \$DOMAIN;
 
     # SSL 证书配置
-    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/\$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/\$DOMAIN/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
 
     # 反向代理配置
     location / {
-        proxy_pass $TARGET;
+        proxy_pass \$TARGET;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -60,7 +60,7 @@ EOF
 
 # 4. 申请 SSL 证书
 echo "===== 申请 Let's Encrypt SSL 证书 ====="
-certbot certonly --nginx -d $DOMAIN --email $EMAIL --agree-tos --non-interactive
+certbot certonly --nginx -d \$DOMAIN --email \$EMAIL --agree-tos --non-interactive
 
 # 5. 配置证书自动续期
 echo "===== 配置证书自动续期 ====="
@@ -71,7 +71,7 @@ echo "===== 放行 80/443 端口 ====="
 ufw allow 80/tcp
 ufw allow 443/tcp
 
-if [ "$IPV6_ENABLE" = "y" ]; then
+if [ "\$IPV6_ENABLE" = "y" ]; then
     ip6tables -A INPUT -p tcp --dport 80 -j ACCEPT
     ip6tables -A INPUT -p tcp --dport 443 -j ACCEPT
     ip6tables-save > /etc/iptables/rules.v6
